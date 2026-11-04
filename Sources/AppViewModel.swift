@@ -8,39 +8,40 @@ final class AppViewModel: ObservableObject {
     @Published var targetFilePath: String = "src/SQLiteJDBCExample.java"
     @Published var selectedMode: InjectionMode = .base64
     @Published var countdownSeconds: Double = 4.0
-    @Published var charDelayMs: Double = 30.0  // Default to 30ms for VM & browser stability
+    @Published var keyIntervalMs: Double = 15.0
+    @Published var remoteCompatibleInput = false
     @Published var playBeeps: Bool = true
     @Published var isAlwaysOnTop: Bool = true
 
     let engine = KeystrokeEngine()
 
     var generatedPayload: String {
-        let trimmed = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return "" }
+        InjectionPayloadBuilder.build(
+            input: inputText,
+            mode: selectedMode,
+            targetPath: targetFilePath
+        )
+    }
 
-        switch selectedMode {
-        case .raw:
-            return inputText
-        case .base64:
-            let encoded = Data(inputText.utf8).base64EncodedString()
-            let path = targetFilePath.trimmingCharacters(in: .whitespacesAndNewlines)
-            let safePath = path.isEmpty ? "output.txt" : path
-            return "echo \(encoded) | base64 -d > \(safePath)\n"
-        case .heredoc:
-            let path = targetFilePath.trimmingCharacters(in: .whitespacesAndNewlines)
-            let safePath = path.isEmpty ? "output.txt" : path
-            return "cat << 'EOF' > \(safePath)\n\(inputText)\nEOF\n"
-        }
+    var payloadValidationError: String? {
+        InjectionPayloadBuilder.validationError(
+            for: inputText,
+            mode: selectedMode,
+            targetPath: targetFilePath
+        )
     }
 
     func triggerInjection() {
         let payload = generatedPayload
         guard !payload.isEmpty else { return }
 
+        KeyboardPanelController.shared.hide()
         engine.startInjection(
             text: payload,
+            mode: selectedMode,
             countdownSeconds: Int(countdownSeconds),
-            charDelayMs: charDelayMs,
+            minimumKeyIntervalMs: keyIntervalMs,
+            remoteCompatible: remoteCompatibleInput,
             playBeeps: playBeeps
         )
     }
@@ -56,7 +57,7 @@ final class AppViewModel: ObservableObject {
     }
 
     func updateWindowLevel(isTop: Bool) {
-        if let window = NSApplication.shared.windows.first {
+        if let window = NSApplication.shared.windows.first(where: { !($0 is NonActivatingPanel) }) {
             window.level = isTop ? .floating : .normal
         }
     }

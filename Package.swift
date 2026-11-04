@@ -7,7 +7,7 @@ let package = Package(
         .macOS(.v13)
     ],
     products: [
-        .executable(name: "KeyInjector", targets: ["KeyInjector"])
+        .executable(name: "GhostType", targets: ["KeyInjector"])
     ],
     targets: [
         .executableTarget(

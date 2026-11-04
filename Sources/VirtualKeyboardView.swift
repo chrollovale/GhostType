@@ -66,6 +66,18 @@ final class KeyboardState: ObservableObject {
     @Published var ctrlActive = false
     @Published var altActive = false
     @Published var winActive = false
+    @Published var statusMessage: String?
+
+    private struct KeyRequest {
+        let code: CGKeyCode
+        let shift: Bool
+        let control: Bool
+        let option: Bool
+        let command: Bool
+    }
+
+    private var pendingKeys: [KeyRequest] = []
+    private var isSendingKeys = false
 
     enum Mod { case shift, ctrl, alt, win }
 
@@ -95,8 +107,8 @@ final class KeyboardState: ObservableObject {
     }
 
     func sendKey(_ code: CGKeyCode) {
-        KeystrokeEngine.sendSingleKey(
-            keyCode: code,
+        enqueueKey(
+            code,
             shift: shiftActive,
             control: ctrlActive,
             option: altActive,
@@ -107,14 +119,41 @@ final class KeyboardState: ObservableObject {
 
     func sendCopi() {
         // COPI = Ctrl + Insert (Windows Copy alternative)
-        KeystrokeEngine.sendSingleKey(keyCode: VK.insert, control: true)
+        enqueueKey(VK.insert, control: true)
         clearModifiers()
     }
 
     func sendPasta() {
         // PASTA = Shift + Insert (Windows Paste alternative)
-        KeystrokeEngine.sendSingleKey(keyCode: VK.insert, shift: true)
+        enqueueKey(VK.insert, shift: true)
         clearModifiers()
+    }
+
+    private func enqueueKey(
+        _ code: CGKeyCode,
+        shift: Bool = false,
+        control: Bool = false,
+        option: Bool = false,
+        command: Bool = false
+    ) {
+        pendingKeys.append(KeyRequest(code: code, shift: shift, control: control, option: option, command: command))
+        guard !isSendingKeys else { return }
+
+        isSendingKeys = true
+        Task { @MainActor in
+            while !pendingKeys.isEmpty {
+                let request = pendingKeys.removeFirst()
+                let sent = await KeystrokeEngine.sendSingleKey(
+                    keyCode: request.code,
+                    shift: request.shift,
+                    control: request.control,
+                    option: request.option,
+                    command: request.command
+                )
+                statusMessage = sent ? nil : "Enable Accessibility in the main window to send keys."
+            }
+            isSendingKeys = false
+        }
     }
 }
 
@@ -144,9 +183,9 @@ struct KBtn: View {
     private var keyHeight: CGFloat { heightUnits * (Self.height + Self.gap) - Self.gap }
 
     private var bgColor: Color {
-        if isActive { return Color.accentColor }
+        if isActive { return AppTheme.blue }
         if let accent = accentColor { return accent }
-        return Color(red: 0.22, green: 0.22, blue: 0.25)
+        return AppTheme.key
     }
 
     private var computedFontSize: CGFloat {
@@ -163,7 +202,7 @@ struct KBtn: View {
                 if let sub = subLabel {
                     Text(sub)
                         .font(.system(size: 8, weight: .regular, design: .default))
-                        .foregroundColor(Color.gray.opacity(0.8))
+                        .foregroundColor(AppTheme.secondaryInk.opacity(0.72))
                         .offset(y: 1)
                 }
                 Text(label)
@@ -173,18 +212,19 @@ struct KBtn: View {
             }
             .frame(width: keyWidth, height: keyHeight)
             .background(
-                RoundedRectangle(cornerRadius: 5)
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(bgColor)
-                    .shadow(color: .black.opacity(0.4), radius: 1, x: 0, y: 1)
+                    .shadow(color: AppTheme.ink.opacity(0.12), radius: 1, x: 0, y: 1)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 5)
-                    .stroke(isActive ? Color.accentColor.opacity(0.8) : Color.white.opacity(0.08), lineWidth: 0.5)
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(isActive ? AppTheme.blue.opacity(0.75) : AppTheme.line.opacity(0.75), lineWidth: 0.75)
             )
-            .foregroundColor(isActive ? .white : Color(white: 0.88))
+            .foregroundColor(isActive ? .white : AppTheme.ink)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(label.isEmpty ? "Space" : label)
     }
 }
 
@@ -211,10 +251,20 @@ struct VirtualKeyboardView: View {
                 HStack(spacing: sectionGap) { shiftRowMain; navRow3 }
                 bottomRow
             }
+
+            if let statusMessage = state.statusMessage {
+                Text(statusMessage)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(AppTheme.secondaryInk)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 4)
+            }
         }
-        .padding(10)
-        .background(Color(red: 0.11, green: 0.11, blue: 0.13))
-        .cornerRadius(12)
+        .padding(12)
+        .background(AppTheme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(AppTheme.line, lineWidth: 1))
+        .padding(8)
+        .preferredColorScheme(.light)
     }
 
     // MARK: - COPI & PASTA
@@ -232,9 +282,9 @@ struct VirtualKeyboardView: View {
                 .background(
                     RoundedRectangle(cornerRadius: 8)
                         .fill(LinearGradient(
-                            colors: [Color(red: 0.15, green: 0.68, blue: 0.38), Color(red: 0.10, green: 0.52, blue: 0.28)],
+                            colors: [AppTheme.blue, Color(red: 0.16, green: 0.27, blue: 0.82)],
                             startPoint: .top, endPoint: .bottom))
-                        .shadow(color: Color(red: 0.1, green: 0.5, blue: 0.3).opacity(0.5), radius: 4, y: 2)
+                        .shadow(color: AppTheme.blue.opacity(0.18), radius: 3, y: 1)
                 )
                 .foregroundColor(.white)
             }
@@ -252,9 +302,9 @@ struct VirtualKeyboardView: View {
                 .background(
                     RoundedRectangle(cornerRadius: 8)
                         .fill(LinearGradient(
-                            colors: [Color(red: 0.35, green: 0.42, blue: 0.95), Color(red: 0.25, green: 0.30, blue: 0.78)],
+                            colors: [Color(red: 0.37, green: 0.47, blue: 1.0), AppTheme.blue],
                             startPoint: .top, endPoint: .bottom))
-                        .shadow(color: Color(red: 0.3, green: 0.3, blue: 0.8).opacity(0.5), radius: 4, y: 2)
+                        .shadow(color: AppTheme.blue.opacity(0.16), radius: 3, y: 1)
                 )
                 .foregroundColor(.white)
             }
@@ -275,7 +325,7 @@ struct VirtualKeyboardView: View {
             k("F9", VK.f9); k("F10", VK.f10); k("F11", VK.f11); k("F12", VK.f12)
             Spacer().frame(width: 6)
             k("PrtSc", VK.printScreen)
-            k("Ins", VK.insert, accent: Color(red: 0.6, green: 0.4, blue: 0.1))
+            k("Ins", VK.insert, accent: AppTheme.blueSoft)
             k("Del", VK.forwardDelete)
         }
     }
@@ -329,7 +379,9 @@ struct VirtualKeyboardView: View {
     private var bottomRow: some View {
         HStack(spacing: gap) {
             modKey("Ctrl", .ctrl, w: 1.5)
-            KBtn("Fn", w: 1, action: {}) // Fn is Mac-only, no-op placeholder
+            KBtn("Fn", w: 1, action: {})
+                .disabled(true)
+                .help("Fn is reserved by macOS and can't be forwarded as a physical key.")
             modKey("Win", .win, w: 1.25)
             modKey("Alt", .alt, w: 1.25)
             k("", VK.space, w: 6.0)  // Space bar
@@ -347,7 +399,9 @@ struct VirtualKeyboardView: View {
     private var navRow2: some View {
         HStack(spacing: gap) {
             k("←", VK.leftArrow)
-            KBtn("·", w: 1, accent: Color(red: 0.18, green: 0.18, blue: 0.20), action: {})
+            KBtn("·", w: 1, accent: AppTheme.blueSoft, action: {})
+                .disabled(true)
+                .help("There is no key in this position.")
             k("→", VK.rightArrow)
         }
     }

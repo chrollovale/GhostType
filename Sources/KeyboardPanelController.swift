@@ -7,15 +7,6 @@ import SwiftUI
 final class NonActivatingPanel: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
-
-    // Accept mouse events even though we're not key window
-    override func sendEvent(_ event: NSEvent) {
-        if event.type == .leftMouseDown || event.type == .leftMouseUp {
-            super.sendEvent(event)
-            return
-        }
-        super.sendEvent(event)
-    }
 }
 
 // MARK: - Keyboard Panel Controller
@@ -79,7 +70,7 @@ final class KeyboardPanelController: ObservableObject {
         p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         p.animationBehavior = .utilityWindow
         p.isReleasedWhenClosed = false
-        p.backgroundColor = NSColor(red: 0.11, green: 0.11, blue: 0.13, alpha: 1.0)
+        p.backgroundColor = NSColor(red: 0.91, green: 0.90, blue: 0.88, alpha: 1.0)
 
         // Observe close button to update isVisible
         NotificationCenter.default.addObserver(

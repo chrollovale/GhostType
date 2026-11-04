@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 @main
-struct KeyInjectorApp: App {
+struct GhostTypeApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     var body: some Scene {
@@ -11,7 +11,7 @@ struct KeyInjectorApp: App {
         }
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified)
-        .defaultSize(width: 760, height: 560)
+        .defaultSize(width: 1040, height: 700)
     }
 }
 

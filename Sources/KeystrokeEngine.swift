@@ -5,14 +5,15 @@ import AppKit
 
 @MainActor
 final class KeystrokeEngine: ObservableObject {
-    @Published var isInjecting: Bool = false
-    @Published var isCountingDown: Bool = false
-    @Published var countdownRemaining: Int = 0
-    @Published var progress: Double = 0.0
-    @Published var progressText: String = ""
-    @Published var isAccessibilityTrusted: Bool = true
+    @Published var isInjecting = false
+    @Published var isCountingDown = false
+    @Published var countdownRemaining = 0
+    @Published var progress = 0.0
+    @Published var progressText = ""
+    @Published var isAccessibilityTrusted = false
 
     private var injectionTask: Task<Void, Never>?
+    private var activeRunID: UUID?
 
     init() {
         checkAccessibility()
@@ -26,7 +27,6 @@ final class KeystrokeEngine: ObservableObject {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         _ = AXIsProcessTrustedWithOptions(options)
 
-        // Directly open macOS System Settings -> Privacy & Security -> Accessibility
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
             NSWorkspace.shared.open(url)
         }
@@ -36,239 +36,362 @@ final class KeystrokeEngine: ObservableObject {
 
     func startInjection(
         text: String,
+        mode: InjectionMode,
         countdownSeconds: Int,
-        charDelayMs: Double,
+        minimumKeyIntervalMs: Double,
+        remoteCompatible: Bool = false,
         playBeeps: Bool = true
     ) {
         guard !text.isEmpty else { return }
+
+        cancelInjection()
         checkAccessibility()
         guard isAccessibilityTrusted else {
             promptAccessibility()
             return
         }
 
-        cancelInjection()
-
+        let runID = UUID()
+        activeRunID = runID
         isCountingDown = true
         isInjecting = false
-        countdownRemaining = countdownSeconds
+        countdownRemaining = min(max(countdownSeconds, 0), 60)
         progress = 0.0
-        progressText = "Preparing to inject..."
+        progressText = "Preparing to inject…"
 
-        let normalized = text.replacingOccurrences(of: "\r\n", with: "\n")
+        let normalizedText = text
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+        let safeCountdown = countdownRemaining
+        let safeIntervalMs = minimumKeyIntervalMs.isFinite
+            ? min(max(minimumKeyIntervalMs, 0.0), 1_000.0)
+            : 15.0
+        let minimumKeyIntervalNanos = UInt64(safeIntervalMs * 1_000_000.0)
 
         injectionTask = Task { [weak self] in
-            guard let self = self else { return }
+            guard let self else { return }
 
-            // 1. Countdown phase
-            for sec in (1...countdownSeconds).reversed() {
-                if Task.isCancelled { break }
-                self.countdownRemaining = sec
-                self.progressText = "Switch focus to target window! Starting in \(sec)s..."
+            for second in stride(from: safeCountdown, through: 1, by: -1) {
+                guard self.activeRunID == runID, !Task.isCancelled else { return }
+                self.countdownRemaining = second
+                self.progressText = "Switch focus to the target window. Starting in \(second)s…"
                 if playBeeps {
                     NSSound.beep()
                 }
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
-            }
-
-            guard !Task.isCancelled else {
-                self.resetState(message: "Injection cancelled.")
-                return
-            }
-
-            // 2. Typing phase
-            self.isCountingDown = false
-            self.isInjecting = true
-            self.progressText = "Injecting keystrokes..."
-
-            let characters = Array(normalized)
-            let total = characters.count
-            // Delay between keystrokes in nanoseconds
-            let interKeyDelayNanos = UInt64(max(5.0, charDelayMs) * 1_000_000.0)
-
-            let source = CGEventSource(stateID: .hidSystemState)
-
-            for (index, char) in characters.enumerated() {
-                if Task.isCancelled { break }
-
-                Self.simulateHardwareCharacter(char, source: source)
-
-                try? await Task.sleep(nanoseconds: interKeyDelayNanos)
-
-                if index % 5 == 0 || index == total - 1 {
-                    let curProg = Double(index + 1) / Double(total)
-                    self.progress = curProg
-                    self.progressText = "Typing: \(index + 1) / \(total) characters (\(Int(curProg * 100))%)"
+                do {
+                    try await Task.sleep(nanoseconds: 1_000_000_000)
+                } catch {
+                    return
                 }
             }
 
-            if Task.isCancelled {
-                self.resetState(message: "Injection cancelled.")
-            } else {
-                self.progress = 1.0
-                self.resetState(message: "Injection complete!")
+            guard self.activeRunID == runID, !Task.isCancelled else { return }
+            self.isCountingDown = false
+            self.isInjecting = true
+
+            if mode == .exactPaste {
+                self.progressText = "Pasting text…"
+                let pasteResult = await Self.pasteText(text, remoteCompatible: remoteCompatible)
+                guard self.activeRunID == runID, !Task.isCancelled else { return }
+                self.progress = pasteResult.succeeded ? 1.0 : 0.0
+                self.finish(runID: runID, message: pasteResult.message)
+                return
             }
+
+            guard let source = CGEventSource(stateID: .hidSystemState) else {
+                self.finish(runID: runID, message: "Couldn't create a keyboard event source.")
+                return
+            }
+            self.progressText = "Injecting keystrokes…"
+
+            let characters = Array(normalizedText)
+            let total = characters.count
+            guard total > 0 else {
+                self.finish(runID: runID, message: "Nothing to inject.")
+                return
+            }
+
+            for (index, character) in characters.enumerated() {
+                guard self.activeRunID == runID, !Task.isCancelled else { return }
+                let keyStartedAt = ProcessInfo.processInfo.systemUptime
+                let sent = await Self.simulateHardwareCharacter(
+                    character,
+                    source: source,
+                    remoteCompatible: remoteCompatible
+                )
+                guard self.activeRunID == runID, !Task.isCancelled else { return }
+                guard sent else {
+                    self.finish(runID: runID, message: "Keystroke creation failed. Check Accessibility access and try again.")
+                    return
+                }
+
+                let elapsedNanos = UInt64(max(0, (ProcessInfo.processInfo.systemUptime - keyStartedAt) * 1_000_000_000))
+                if minimumKeyIntervalNanos > elapsedNanos {
+                    do {
+                        try await Task.sleep(nanoseconds: minimumKeyIntervalNanos - elapsedNanos)
+                    } catch {
+                        return
+                    }
+                }
+
+                if index % 32 == 0 || index == total - 1 {
+                    let currentProgress = Double(index + 1) / Double(total)
+                    self.progress = currentProgress
+                    self.progressText = "Typing: \(index + 1) / \(total) characters (\(Int(currentProgress * 100))%)"
+                }
+            }
+
+            guard self.activeRunID == runID, !Task.isCancelled else { return }
+            self.progress = 1.0
+            self.finish(runID: runID, message: "Injection complete.")
         }
     }
 
     func cancelInjection() {
         injectionTask?.cancel()
         injectionTask = nil
+        activeRunID = nil
         resetState(message: "Stopped.")
+    }
+
+    private func finish(runID: UUID, message: String) {
+        guard activeRunID == runID else { return }
+        injectionTask = nil
+        activeRunID = nil
+        resetState(message: message)
     }
 
     private func resetState(message: String) {
         isCountingDown = false
         isInjecting = false
+        countdownRemaining = 0
         progressText = message
     }
 
-    // MARK: - Hardware Scan Code Synthesis for VMs & Remote Desktops
-    private static func simulateHardwareCharacter(_ char: Character, source: CGEventSource?) {
-        let (keyCode, needsShift) = getHardwareKeyCode(for: char)
+    private struct PasteResult {
+        let succeeded: Bool
+        let message: String
+    }
 
-        if let keyCode = keyCode {
-            // macOS Virtual KeyCode mapped accurately
-            let kVK_Shift: CGKeyCode = 0x38 // Left Shift
+    private static func pasteText(_ text: String, remoteCompatible: Bool) async -> PasteResult {
+        let pasteboard = NSPasteboard.general
+        guard let snapshot = PasteboardSnapshot.capture(from: pasteboard) else {
+            return PasteResult(succeeded: false, message: "The current clipboard can't be preserved safely. Clear or copy its contents, then retry.")
+        }
 
-            if needsShift {
-                let shiftDown = CGEvent(keyboardEventSource: source, virtualKey: kVK_Shift, keyDown: true)
-                shiftDown?.flags = .maskShift
-                shiftDown?.post(tap: .cghidEventTap)
-                usleep(8000) // 8ms shift registration
+        pasteboard.clearContents()
+        let clearedChangeCount = pasteboard.changeCount
+        guard pasteboard.setString(text, forType: .string) else {
+            _ = snapshot.restore(to: pasteboard, onlyIfChangeCount: clearedChangeCount)
+            return PasteResult(succeeded: false, message: "Couldn't place the source text on the clipboard.")
+        }
+        let injectedChangeCount = pasteboard.changeCount
+
+        let sent = await sendSingleKey(
+            keyCode: 0x09,
+            control: remoteCompatible,
+            command: !remoteCompatible
+        )
+        guard sent else {
+            _ = snapshot.restore(to: pasteboard, onlyIfChangeCount: injectedChangeCount)
+            return PasteResult(succeeded: false, message: "Couldn't send the paste shortcut. Check Accessibility access.")
+        }
+
+        do {
+            try await Task.sleep(nanoseconds: 180_000_000)
+        } catch {
+            _ = snapshot.restore(to: pasteboard, onlyIfChangeCount: injectedChangeCount)
+            return PasteResult(succeeded: false, message: "Paste cancelled.")
+        }
+
+        guard pasteboard.changeCount == injectedChangeCount else {
+            return PasteResult(succeeded: true, message: "Text pasted. A clipboard change was left untouched.")
+        }
+
+        guard snapshot.restore(to: pasteboard, onlyIfChangeCount: injectedChangeCount) else {
+            return PasteResult(succeeded: true, message: "Text pasted, but the previous clipboard couldn't be restored.")
+        }
+        return PasteResult(succeeded: true, message: "Text pasted; previous clipboard restored.")
+    }
+
+    private struct PasteboardSnapshot {
+        private struct Entry {
+            let type: NSPasteboard.PasteboardType
+            let data: Data
+        }
+
+        private let items: [[Entry]]
+
+        static func capture(from pasteboard: NSPasteboard) -> PasteboardSnapshot? {
+            if let sourceItems = pasteboard.pasteboardItems, !sourceItems.isEmpty {
+                var copiedItems: [[Entry]] = []
+                for sourceItem in sourceItems {
+                    var entries: [Entry] = []
+                    for type in sourceItem.types {
+                        if let data = sourceItem.data(forType: type) {
+                            entries.append(Entry(type: type, data: data))
+                        } else if let string = sourceItem.string(forType: type) {
+                            entries.append(Entry(type: type, data: Data(string.utf8)))
+                        } else {
+                            return nil
+                        }
+                    }
+                    guard !entries.isEmpty else { return nil }
+                    copiedItems.append(entries)
+                }
+                return PasteboardSnapshot(items: copiedItems)
             }
 
-            let down = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true)
-            if needsShift {
-                down?.flags = .maskShift
+            if let string = pasteboard.string(forType: .string) {
+                return PasteboardSnapshot(items: [[Entry(type: .string, data: Data(string.utf8))]])
             }
-            down?.post(tap: .cghidEventTap)
+            return PasteboardSnapshot(items: [])
+        }
 
-            // Hold key down for 16ms so VM input thread samples it reliably
-            usleep(16000)
+        func restore(to pasteboard: NSPasteboard, onlyIfChangeCount expectedChangeCount: Int) -> Bool {
+            guard pasteboard.changeCount == expectedChangeCount else { return false }
+            pasteboard.clearContents()
+            guard !items.isEmpty else { return true }
 
-            let up = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false)
-            if needsShift {
-                up?.flags = .maskShift
+            let restoredItems = items.map { entries in
+                let item = NSPasteboardItem()
+                for entry in entries {
+                    item.setData(entry.data, forType: entry.type)
+                }
+                return item
             }
-            up?.post(tap: .cghidEventTap)
-
-            if needsShift {
-                usleep(8000)
-                let shiftUp = CGEvent(keyboardEventSource: source, virtualKey: kVK_Shift, keyDown: false)
-                shiftUp?.flags = []
-                shiftUp?.post(tap: .cghidEventTap)
-            }
-
-            usleep(8000) // Inter-key cooldown
-        } else {
-            // Fallback for non-ASCII Unicode characters
-            var utf16Chars = Array(String(char).utf16)
-            let down = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true)
-            down?.keyboardSetUnicodeString(stringLength: utf16Chars.count, unicodeString: &utf16Chars)
-            down?.post(tap: .cghidEventTap)
-
-            usleep(16000)
-
-            let up = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false)
-            up?.keyboardSetUnicodeString(stringLength: utf16Chars.count, unicodeString: &utf16Chars)
-            up?.post(tap: .cghidEventTap)
-
-            usleep(8000)
+            return pasteboard.writeObjects(restoredItems)
         }
     }
 
-    // MARK: - Single Key Sender (for Virtual Keyboard)
+    // Hardware keycodes preserve the key-position behavior expected by VMs and remote desktops.
+    private static func simulateHardwareCharacter(
+        _ character: Character,
+        source: CGEventSource,
+        remoteCompatible: Bool
+    ) async -> Bool {
+        let (keyCode, needsShift) = getHardwareKeyCode(for: character)
+        let keyHoldNanos: UInt64 = remoteCompatible ? 16_000_000 : 4_000_000
+        let shiftLeadNanos: UInt64 = remoteCompatible ? 8_000_000 : 2_000_000
+        let shiftReleaseNanos: UInt64 = remoteCompatible ? 8_000_000 : 0
+        if let keyCode {
+            let shiftKey: CGKeyCode = 0x38
+
+            if needsShift {
+                guard postKeyEvent(source: source, keyCode: shiftKey, isDown: true, flags: .maskShift) else {
+                    return false
+                }
+                await pause(shiftLeadNanos)
+            }
+
+            guard !Task.isCancelled else {
+                if needsShift { _ = postKeyEvent(source: source, keyCode: shiftKey, isDown: false, flags: []) }
+                return false
+            }
+
+            guard postKeyEvent(source: source, keyCode: keyCode, isDown: true, flags: needsShift ? .maskShift : []) else {
+                if needsShift { _ = postKeyEvent(source: source, keyCode: shiftKey, isDown: false, flags: []) }
+                return false
+            }
+
+            await pause(keyHoldNanos)
+            let keyReleased = postKeyEvent(source: source, keyCode: keyCode, isDown: false, flags: needsShift ? .maskShift : [])
+            if needsShift {
+                if shiftReleaseNanos > 0 { await pause(shiftReleaseNanos) }
+                _ = postKeyEvent(source: source, keyCode: shiftKey, isDown: false, flags: [])
+            }
+            return keyReleased
+        }
+
+        var utf16Characters = Array(String(character).utf16)
+        guard !utf16Characters.isEmpty,
+              let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true),
+              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false) else {
+            return false
+        }
+
+        keyDown.keyboardSetUnicodeString(stringLength: utf16Characters.count, unicodeString: &utf16Characters)
+        keyDown.post(tap: .cghidEventTap)
+        await pause(keyHoldNanos)
+        keyUp.post(tap: .cghidEventTap)
+        return true
+    }
+
+    // MARK: - Virtual Keyboard Key Sender
     static func sendSingleKey(
         keyCode: CGKeyCode,
         shift: Bool = false,
         control: Bool = false,
         option: Bool = false,
         command: Bool = false
-    ) {
-        let source = CGEventSource(stateID: .hidSystemState)
-        let kVK_Shift: CGKeyCode = 0x38
-        let kVK_Control: CGKeyCode = 0x3B
-        let kVK_Option: CGKeyCode = 0x3A
-        let kVK_Command: CGKeyCode = 0x37
-
-        var flags: CGEventFlags = []
-
-        // Press modifiers down
-        if control {
-            flags.insert(.maskControl)
-            let ev = CGEvent(keyboardEventSource: source, virtualKey: kVK_Control, keyDown: true)
-            ev?.flags = flags
-            ev?.post(tap: .cghidEventTap)
-            usleep(12000)
-        }
-        if shift {
-            flags.insert(.maskShift)
-            let ev = CGEvent(keyboardEventSource: source, virtualKey: kVK_Shift, keyDown: true)
-            ev?.flags = flags
-            ev?.post(tap: .cghidEventTap)
-            usleep(12000)
-        }
-        if option {
-            flags.insert(.maskAlternate)
-            let ev = CGEvent(keyboardEventSource: source, virtualKey: kVK_Option, keyDown: true)
-            ev?.flags = flags
-            ev?.post(tap: .cghidEventTap)
-            usleep(12000)
-        }
-        if command {
-            flags.insert(.maskCommand)
-            let ev = CGEvent(keyboardEventSource: source, virtualKey: kVK_Command, keyDown: true)
-            ev?.flags = flags
-            ev?.post(tap: .cghidEventTap)
-            usleep(12000)
+    ) async -> Bool {
+        guard AXIsProcessTrusted(), let source = CGEventSource(stateID: .hidSystemState) else {
+            return false
         }
 
-        // Press and release the main key
-        let down = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true)
-        down?.flags = flags
-        down?.post(tap: .cghidEventTap)
-        usleep(20000)
+        let modifiers: [(keyCode: CGKeyCode, flag: CGEventFlags, enabled: Bool)] = [
+            (0x3B, .maskControl, control),
+            (0x38, .maskShift, shift),
+            (0x3A, .maskAlternate, option),
+            (0x37, .maskCommand, command)
+        ]
 
-        let up = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false)
-        up?.flags = flags
-        up?.post(tap: .cghidEventTap)
-        usleep(12000)
+        var activeFlags: CGEventFlags = []
+        var pressedModifiers: [(keyCode: CGKeyCode, flag: CGEventFlags)] = []
 
-        // Release modifiers in reverse order
-        if command {
-            flags.remove(.maskCommand)
-            let ev = CGEvent(keyboardEventSource: source, virtualKey: kVK_Command, keyDown: false)
-            ev?.flags = flags
-            ev?.post(tap: .cghidEventTap)
-            usleep(12000)
+        for modifier in modifiers where modifier.enabled {
+            activeFlags.insert(modifier.flag)
+            guard postKeyEvent(source: source, keyCode: modifier.keyCode, isDown: true, flags: activeFlags) else {
+                await releaseModifiers(pressedModifiers, source: source, flags: &activeFlags)
+                return false
+            }
+            pressedModifiers.append((modifier.keyCode, modifier.flag))
+            await pause(12_000_000)
         }
-        if option {
-            flags.remove(.maskAlternate)
-            let ev = CGEvent(keyboardEventSource: source, virtualKey: kVK_Option, keyDown: false)
-            ev?.flags = flags
-            ev?.post(tap: .cghidEventTap)
-            usleep(12000)
+
+        guard postKeyEvent(source: source, keyCode: keyCode, isDown: true, flags: activeFlags) else {
+            await releaseModifiers(pressedModifiers, source: source, flags: &activeFlags)
+            return false
         }
-        if shift {
-            flags.remove(.maskShift)
-            let ev = CGEvent(keyboardEventSource: source, virtualKey: kVK_Shift, keyDown: false)
-            ev?.flags = flags
-            ev?.post(tap: .cghidEventTap)
-            usleep(12000)
-        }
-        if control {
-            flags.remove(.maskControl)
-            let ev = CGEvent(keyboardEventSource: source, virtualKey: kVK_Control, keyDown: false)
-            ev?.flags = flags
-            ev?.post(tap: .cghidEventTap)
-            usleep(12000)
+        await pause(20_000_000)
+        let keyReleased = postKeyEvent(source: source, keyCode: keyCode, isDown: false, flags: activeFlags)
+        await releaseModifiers(pressedModifiers, source: source, flags: &activeFlags)
+        return keyReleased
+    }
+
+    private static func releaseModifiers(
+        _ modifiers: [(keyCode: CGKeyCode, flag: CGEventFlags)],
+        source: CGEventSource,
+        flags: inout CGEventFlags
+    ) async {
+        for modifier in modifiers.reversed() {
+            flags.remove(modifier.flag)
+            _ = postKeyEvent(source: source, keyCode: modifier.keyCode, isDown: false, flags: flags)
+            await pause(12_000_000)
         }
     }
 
-    // Comprehensive macOS ANSI Virtual Keycode Map
-    private static func getHardwareKeyCode(for char: Character) -> (CGKeyCode?, Bool) {
-        switch char {
+    private static func postKeyEvent(
+        source: CGEventSource,
+        keyCode: CGKeyCode,
+        isDown: Bool,
+        flags: CGEventFlags
+    ) -> Bool {
+        guard let event = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: isDown) else {
+            return false
+        }
+        event.flags = flags
+        event.post(tap: .cghidEventTap)
+        return true
+    }
+
+    private static func pause(_ nanoseconds: UInt64) async {
+        try? await Task.sleep(nanoseconds: nanoseconds)
+    }
+
+    // ANSI US virtual keycode map. Non-ASCII and unmapped characters use Unicode events.
+    private static func getHardwareKeyCode(for character: Character) -> (CGKeyCode?, Bool) {
+        switch character {
         case "a": return (0x00, false); case "A": return (0x00, true)
         case "b": return (0x0B, false); case "B": return (0x0B, true)
         case "c": return (0x08, false); case "C": return (0x08, true)
@@ -322,9 +445,7 @@ final class KeystrokeEngine: ObservableObject {
         case " ": return (0x31, false)
         case "\n": return (0x24, false)
         case "\t": return (0x30, false)
-
-        default:
-            return (nil, false)
+        default: return (nil, false)
         }
     }
 }

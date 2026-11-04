@@ -6,61 +6,10 @@ struct LogoView: View {
     var size: CGFloat = 36
 
     var body: some View {
-        ZStack {
-            // Dark Squircle Base
-            RoundedRectangle(cornerRadius: size * 0.24, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [Color(red: 0.12, green: 0.14, blue: 0.20), Color(red: 0.05, green: 0.06, blue: 0.09)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: size * 0.24, style: .continuous)
-                        .stroke(Color.white.opacity(0.18), lineWidth: 1)
-                )
-                .shadow(color: Color.black.opacity(0.35), radius: 4, x: 0, y: 2)
-
-            // Inner Keycap Top Face
-            RoundedRectangle(cornerRadius: size * 0.16, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [Color(red: 0.19, green: 0.22, blue: 0.30), Color(red: 0.11, green: 0.13, blue: 0.18)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-                .padding(size * 0.10)
-                .overlay(
-                    RoundedRectangle(cornerRadius: size * 0.16, style: .continuous)
-                        .stroke(Color.white.opacity(0.12), lineWidth: 0.5)
-                        .padding(size * 0.10)
-                )
-
-            // Minimalist Neon Glyph: Chevron > and Downward Arrow
-            HStack(spacing: size * 0.02) {
-                Text(">")
-                    .font(.system(size: size * 0.38, weight: .black, design: .monospaced))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [Color(red: 0.0, green: 0.95, blue: 0.90), Color(red: 0.3, green: 0.6, blue: 1.0)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-
-                Image(systemName: "arrow.down")
-                    .font(.system(size: size * 0.30, weight: .bold))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [Color(red: 0.0, green: 0.95, blue: 0.90), Color(red: 0.4, green: 0.5, blue: 1.0)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-            }
-        }
+        RoundedRectangle(cornerRadius: size * 0.24, style: .continuous)
+            .fill(AppTheme.inset)
+            .overlay(RoundedRectangle(cornerRadius: size * 0.24, style: .continuous).stroke(AppTheme.line, lineWidth: 1))
+            .overlay(DotMatrixMark(dotSize: size * 0.11, spacing: size * 0.08))
         .frame(width: size, height: size)
     }
 }
@@ -70,13 +19,11 @@ struct ContentView: View {
     @StateObject private var kbPanel = KeyboardPanelController.shared
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Header Bar
+        VStack(spacing: 12) {
             headerBar
+                .padding(.horizontal, 14)
+                .padding(.top, 14)
 
-            Divider()
-
-            // Main Content Area
             HSplitView {
                 // Left Column: Text Input & Mode Options
                 VStack(alignment: .leading, spacing: 12) {
@@ -86,17 +33,17 @@ struct ContentView: View {
                         TextEditor(text: $vm.inputText)
                             .font(.system(.body, design: .monospaced))
                             .scrollContentBackground(.hidden)
-                            .background(Color(NSColor.textBackgroundColor))
-                            .cornerRadius(8)
+                            .background(AppTheme.inset)
+                            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
                             .overlay(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
+                                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                    .stroke(AppTheme.line, lineWidth: 1)
                             )
 
                         if vm.inputText.isEmpty {
                             Text("Paste or type the completed code/text you want to inject here...")
                                 .font(.system(.body, design: .monospaced))
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(AppTheme.secondaryInk.opacity(0.7))
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 10)
                                 .allowsHitTesting(false)
@@ -106,8 +53,9 @@ struct ContentView: View {
                     // Mode Specific Configuration
                     modeConfigurationBox
                 }
-                .padding()
-                .frame(minWidth: 380, maxWidth: .infinity)
+                .padding(14)
+                .frame(minWidth: 390, maxWidth: .infinity, maxHeight: .infinity)
+                .appCard()
 
                 // Right Column: Settings & Live Preview
                 VStack(alignment: .leading, spacing: 14) {
@@ -125,22 +73,30 @@ struct ContentView: View {
                         Slider(value: $vm.countdownSeconds, in: 2...10, step: 1)
                         Text("Time to click into your target window before typing.")
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(AppTheme.secondaryInk)
                     }
 
-                    // Typing Speed Setting
+                    // Keystroke Pace Setting
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
-                            Label("Keystroke Delay:", systemImage: "speedometer")
+                            Label("Minimum Key Interval:", systemImage: "speedometer")
                             Spacer()
-                            Text("\(Int(vm.charDelayMs)) ms")
+                            Text("\(Int(vm.keyIntervalMs)) ms")
                                 .fontWeight(.medium)
                         }
-                        Slider(value: $vm.charDelayMs, in: 15...80, step: 5)
-                        Text("25–40ms is required for Parallels VM to prevent dropped keys.")
+                        Slider(value: $vm.keyIntervalMs, in: 8...100, step: 2)
+                            .disabled(vm.selectedMode == .exactPaste)
+                        Text(vm.selectedMode == .exactPaste
+                             ? "A single paste is used, so key interval doesn't apply."
+                             : "Minimum time between key starts; event hold time is included.")
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(AppTheme.secondaryInk)
                     }
+
+                    Toggle(isOn: $vm.remoteCompatibleInput) {
+                        Label("VM / remote target", systemImage: "display.2")
+                    }
+                    .help("Uses longer key holds for virtual machines and remote desktops.")
 
                     // Toggles
                     VStack(alignment: .leading, spacing: 8) {
@@ -156,7 +112,9 @@ struct ContentView: View {
                         }
                     }
 
-                    Divider()
+                    Rectangle()
+                        .fill(AppTheme.line)
+                        .frame(height: 1)
 
                     // Live Payload Preview
                     VStack(alignment: .leading, spacing: 6) {
@@ -171,22 +129,27 @@ struct ContentView: View {
                                 .padding(8)
                         }
                         .frame(maxHeight: 120)
-                        .background(Color(NSColor.controlBackgroundColor))
-                        .cornerRadius(6)
+                        .background(AppTheme.inset, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(AppTheme.line.opacity(0.7), lineWidth: 0.75))
                     }
 
                     Spacer()
                 }
-                .padding()
-                .frame(minWidth: 260, maxWidth: 320)
+                .padding(14)
+                .frame(minWidth: 280, maxWidth: 340, maxHeight: .infinity)
+                .appCard()
             }
+            .padding(.horizontal, 14)
 
-            Divider()
-
-            // Bottom Action & Status Footer
             footerBar
+                .padding(.horizontal, 14)
+                .padding(.bottom, 14)
         }
-        .frame(minWidth: 720, minHeight: 540)
+        .frame(minWidth: 900, minHeight: 640)
+        .background(AppTheme.canvas.ignoresSafeArea())
+        .foregroundStyle(AppTheme.ink)
+        .tint(AppTheme.blue)
+        .preferredColorScheme(.light)
         .onAppear {
             vm.updateWindowLevel(isTop: vm.isAlwaysOnTop)
             vm.engine.checkAccessibility()
@@ -202,12 +165,12 @@ struct ContentView: View {
             LogoView(size: 38)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("KeyInjector")
+                Text("GhostType")
                     .font(.headline)
                     .fontWeight(.semibold)
-                Text("Hardware KeyCode & Code Injector")
+                Text("Precise Text Injection")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(AppTheme.secondaryInk)
             }
 
             Spacer()
@@ -222,41 +185,40 @@ struct ContentView: View {
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
-            .tint(kbPanel.isVisible ? .accentColor : nil)
+            .tint(kbPanel.isVisible ? AppTheme.blue : AppTheme.secondaryInk)
+            .disabled(vm.engine.isCountingDown || vm.engine.isInjecting)
 
             // Accessibility Badge
             if vm.engine.isAccessibilityTrusted {
                 HStack(spacing: 4) {
                     Image(systemName: "checkmark.shield.fill")
-                        .foregroundColor(.green)
+                        .foregroundColor(Color(red: 0.18, green: 0.53, blue: 0.34))
                     Text("Accessibility Granted")
                         .font(.caption)
-                        .foregroundColor(.green)
+                        .foregroundColor(Color(red: 0.18, green: 0.53, blue: 0.34))
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
-                .background(Color.green.opacity(0.12))
-                .cornerRadius(12)
+                .background(Color(red: 0.88, green: 0.94, blue: 0.89), in: Capsule())
             } else {
                 Button(action: { vm.engine.promptAccessibility() }) {
                     HStack(spacing: 4) {
                         Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundColor(.orange)
+                            .foregroundColor(Color(red: 0.65, green: 0.39, blue: 0.08))
                         Text("Enable Accessibility")
                             .font(.caption)
-                            .foregroundColor(.orange)
+                            .foregroundColor(Color(red: 0.65, green: 0.39, blue: 0.08))
                     }
                 }
                 .buttonStyle(.plain)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
-                .background(Color.orange.opacity(0.15))
-                .cornerRadius(12)
+                .background(Color(red: 0.97, green: 0.92, blue: 0.82), in: Capsule())
             }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(Color(NSColor.windowBackgroundColor))
+        .appCard()
     }
 
     // MARK: - Input Toolbar
@@ -288,39 +250,24 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 8) {
             Picker("Injection Mode:", selection: $vm.selectedMode) {
                 ForEach(InjectionMode.allCases) { mode in
-                    Text(mode.rawValue).tag(mode)
+                    Text(mode.pickerTitle).tag(mode)
                 }
             }
             .pickerStyle(.segmented)
 
-            // Informational guidance per mode
-            if vm.selectedMode == .raw {
-                HStack(alignment: .top, spacing: 6) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundColor(.orange)
-                        .font(.caption)
-                    Text("Direct Typing into smart editors (Monaco/VS Code) triggers auto-closing brackets {} and double-indentation. Use **Base64 One-Liner** into the Terminal for 100% accuracy.")
-                        .font(.caption)
-                        .foregroundColor(.orange)
-                }
-                .padding(6)
-                .background(Color.orange.opacity(0.1))
-                .cornerRadius(6)
-            } else if vm.selectedMode == .base64 {
-                HStack(alignment: .top, spacing: 6) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.green)
-                        .font(.caption)
-                    Text("Recommended: Focus the **Terminal** prompt (`chef@...:~$`). Writes the full file in 1 single line without bracket or indentation errors.")
-                        .font(.caption)
-                        .foregroundColor(.green)
-                }
-                .padding(6)
-                .background(Color.green.opacity(0.1))
-                .cornerRadius(6)
+            HStack(alignment: .top, spacing: 7) {
+                Image(systemName: vm.payloadValidationError == nil ? "info.circle.fill" : "exclamationmark.triangle.fill")
+                    .foregroundStyle(vm.payloadValidationError == nil ? AppTheme.blue : Color.red)
+                    .font(.caption)
+                Text(vm.payloadValidationError ?? vm.selectedMode.description)
+                    .font(.caption)
+                    .foregroundStyle(vm.payloadValidationError == nil ? AppTheme.secondaryInk : Color.red)
             }
+            .padding(8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(vm.payloadValidationError == nil ? AppTheme.blueSoft.opacity(0.35) : Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
 
-            if vm.selectedMode == .base64 || vm.selectedMode == .heredoc {
+            if vm.selectedMode.usesTargetPath {
                 HStack {
                     Text("Target Path:")
                         .font(.caption)
@@ -332,8 +279,8 @@ struct ContentView: View {
             }
         }
         .padding(10)
-        .background(Color(NSColor.controlBackgroundColor).opacity(0.6))
-        .cornerRadius(8)
+        .background(AppTheme.inset, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(AppTheme.line, lineWidth: 0.8))
     }
 
     // MARK: - Footer & Action Button
@@ -344,16 +291,18 @@ struct ContentView: View {
                 HStack(spacing: 12) {
                     Text("\(vm.engine.countdownRemaining)")
                         .font(.system(size: 28, weight: .bold, design: .rounded))
-                        .foregroundColor(.accentColor)
+                        .foregroundStyle(AppTheme.blue)
                         .frame(width: 40)
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(vm.selectedMode == .base64 ? "Click into the TERMINAL window now!" : "Click into your target window now!")
+                        Text(vm.selectedMode == .base64 || vm.selectedMode == .heredoc
+                             ? "Click into the TERMINAL window now!"
+                             : "Click into your target editor now!")
                             .font(.headline)
                             .foregroundColor(.primary)
                         Text(vm.engine.progressText)
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(AppTheme.secondaryInk)
                     }
 
                     Spacer()
@@ -370,6 +319,7 @@ struct ContentView: View {
                     HStack {
                         ProgressView(value: vm.engine.progress)
                             .progressViewStyle(.linear)
+                            .tint(AppTheme.blue)
                         Button(action: { vm.engine.cancelInjection() }) {
                             Image(systemName: "stop.fill")
                         }
@@ -378,17 +328,17 @@ struct ContentView: View {
                     }
                     Text(vm.engine.progressText)
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(AppTheme.secondaryInk)
                 }
             } else {
                 // Idle State
                 VStack(alignment: .leading, spacing: 2) {
                     Text(vm.engine.progressText.isEmpty ? "Ready to inject." : vm.engine.progressText)
                         .font(.subheadline)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(AppTheme.secondaryInk)
                     Text("\(vm.inputText.count) characters prepared")
                         .font(.caption2)
-                        .foregroundColor(.secondary.opacity(0.7))
+                        .foregroundStyle(AppTheme.secondaryInk.opacity(0.7))
                 }
 
                 Spacer()
@@ -396,17 +346,24 @@ struct ContentView: View {
                 Button(action: { vm.triggerInjection() }) {
                     HStack(spacing: 6) {
                         Image(systemName: "play.fill")
-                        Text("Inject (in \(Int(vm.countdownSeconds))s)")
+                        Text("\(vm.selectedMode == .exactPaste ? "Paste" : "Inject") (in \(Int(vm.countdownSeconds))s)")
                     }
                     .frame(minWidth: 150)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
-                .disabled(vm.generatedPayload.isEmpty)
+                .disabled(vm.generatedPayload.isEmpty || vm.payloadValidationError != nil)
             }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(Color(NSColor.windowBackgroundColor))
+        .appCard()
+    }
+}
+
+private extension View {
+    func appCard() -> some View {
+        background(AppTheme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(AppTheme.line, lineWidth: 0.8))
     }
 }
