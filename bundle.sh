@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-APP_VERSION="1.2.0"
+APP_VERSION="1.3.0"
 OUTPUT_DIR="${1:-$SCRIPT_DIR}"
 if [[ "$OUTPUT_DIR" != /* ]]; then
     OUTPUT_DIR="$SCRIPT_DIR/$OUTPUT_DIR"

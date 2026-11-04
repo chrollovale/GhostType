@@ -14,7 +14,7 @@ enum InjectionMode: String, CaseIterable, Identifiable {
         case .raw:
             return "Sends clipboard-free key events using a US ANSI layout. CodeChef's editor may transform Enter, Tab, or punctuation while typing."
         case .smartEditor:
-            return "For an empty editor with auto-pairing enabled: after (), [], or {} is inserted automatically, GhostType moves past the editor's closer instead of typing it again. Auto-indentation is still editor-controlled."
+            return "For Monaco or VS Code with auto-closing pairs and indentation enabled: deletes the editor-generated closer after {, (, [, \" or ', then clears generated indentation before typing the source line's own spaces. Use an empty editor."
         case .exactPaste:
             return "Temporarily places the source on the clipboard, pastes it once, then restores the previous clipboard if unchanged. Use this when editor key handling changes spacing."
         case .base64:
@@ -39,91 +39,27 @@ enum InjectionMode: String, CaseIterable, Identifiable {
     }
 }
 
-enum SmartEditorAction: Equatable {
-    case type(Character)
-    case stepOverPair(Character)
+struct SmartEditorLine: Equatable {
+    let text: String
+    let clearsAutoIndent: Bool
 }
 
 enum SmartEditorPlanner {
-    private enum ScanState {
-        case code
-        case lineComment
-        case blockComment
-        case string(Character)
+    private static let autoClosingOpeners: Set<Character> = ["{", "(", "[", "\"", "'"]
+
+    static func lines(for text: String) -> [SmartEditorLine] {
+        text.components(separatedBy: "\n").enumerated().map { index, line in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            let startsWithSourceIndent = line.hasPrefix(" ") || line.hasPrefix("\t")
+            return SmartEditorLine(
+                text: line,
+                clearsAutoIndent: index > 0 && !trimmed.isEmpty && startsWithSourceIndent
+            )
+        }
     }
 
-    private static let bracketPairs: [Character: Character] = [
-        "(": ")",
-        "[": "]",
-        "{": "}"
-    ]
-
-    static func actions(for text: String) -> [SmartEditorAction] {
-        let characters = Array(text)
-        var actions: [SmartEditorAction] = []
-        actions.reserveCapacity(characters.count)
-        var state = ScanState.code
-        var escaped = false
-        var expectedClosers: [Character] = []
-        var index = 0
-
-        while index < characters.count {
-            let character = characters[index]
-            let next = index + 1 < characters.count ? characters[index + 1] : nil
-
-            switch state {
-            case .lineComment:
-                actions.append(.type(character))
-                if character == "\n" { state = .code }
-
-            case .blockComment:
-                actions.append(.type(character))
-                if character == "*", next == "/" {
-                    actions.append(.type("/"))
-                    state = .code
-                    index += 1
-                }
-
-            case let .string(delimiter):
-                actions.append(.type(character))
-                if escaped {
-                    escaped = false
-                } else if character == "\\" {
-                    escaped = true
-                } else if character == delimiter {
-                    state = .code
-                }
-
-            case .code:
-                if character == "/", next == "/" {
-                    actions.append(.type(character))
-                    actions.append(.type("/"))
-                    state = .lineComment
-                    index += 1
-                } else if character == "/", next == "*" {
-                    actions.append(.type(character))
-                    actions.append(.type("*"))
-                    state = .blockComment
-                    index += 1
-                } else if character == "\"" || character == "'" || character == "`" {
-                    actions.append(.type(character))
-                    state = .string(character)
-                    escaped = false
-                } else if let closer = bracketPairs[character] {
-                    actions.append(.type(character))
-                    expectedClosers.append(closer)
-                } else if let expected = expectedClosers.last, character == expected {
-                    actions.append(.stepOverPair(character))
-                    expectedClosers.removeLast()
-                } else {
-                    actions.append(.type(character))
-                }
-            }
-
-            index += 1
-        }
-
-        return actions
+    static func deletesAutoCloser(after character: Character) -> Bool {
+        autoClosingOpeners.contains(character)
     }
 }
 

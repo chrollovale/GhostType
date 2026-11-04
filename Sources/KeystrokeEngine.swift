@@ -104,32 +104,39 @@ final class KeystrokeEngine: ObservableObject {
             }
             self.progressText = "Injecting keystrokes…"
 
-            let actions = mode == .smartEditor
-                ? SmartEditorPlanner.actions(for: normalizedText)
-                : normalizedText.map(SmartEditorAction.type)
-            let total = actions.count
+            if mode == .smartEditor {
+                let succeeded = await self.injectSmartEditor(
+                    normalizedText,
+                    source: source,
+                    remoteCompatible: remoteCompatible,
+                    minimumKeyIntervalNanos: minimumKeyIntervalNanos,
+                    runID: runID
+                )
+                guard self.activeRunID == runID, !Task.isCancelled else { return }
+                guard succeeded else {
+                    self.finish(runID: runID, message: "Smart Editor couldn't create a keystroke. Check Accessibility access and that the target editor is ready.")
+                    return
+                }
+                self.progress = 1.0
+                self.finish(runID: runID, message: "Injection complete.")
+                return
+            }
+
+            let characters = Array(normalizedText)
+            let total = characters.count
             guard total > 0 else {
                 self.finish(runID: runID, message: "Nothing to inject.")
                 return
             }
 
-            for (index, action) in actions.enumerated() {
+            for (index, character) in characters.enumerated() {
                 guard self.activeRunID == runID, !Task.isCancelled else { return }
                 let keyStartedAt = ProcessInfo.processInfo.systemUptime
-                let sent: Bool
-                switch action {
-                case let .type(character):
-                    sent = await Self.simulateHardwareCharacter(
-                        character,
-                        source: source,
-                        remoteCompatible: remoteCompatible
-                    )
-                case .stepOverPair:
-                    sent = await Self.moveRightOverAutoPair(
-                        source: source,
-                        remoteCompatible: remoteCompatible
-                    )
-                }
+                let sent = await Self.simulateHardwareCharacter(
+                    character,
+                    source: source,
+                    remoteCompatible: remoteCompatible
+                )
                 guard self.activeRunID == runID, !Task.isCancelled else { return }
                 guard sent else {
                     self.finish(runID: runID, message: "Keystroke creation failed. Check Accessibility access and try again.")
@@ -156,6 +163,99 @@ final class KeystrokeEngine: ObservableObject {
             self.progress = 1.0
             self.finish(runID: runID, message: "Injection complete.")
         }
+    }
+
+    private func injectSmartEditor(
+        _ text: String,
+        source: CGEventSource,
+        remoteCompatible: Bool,
+        minimumKeyIntervalNanos: UInt64,
+        runID: UUID
+    ) async -> Bool {
+        let lines = SmartEditorPlanner.lines(for: text)
+        let totalLines = lines.count
+        guard totalLines > 0 else { return false }
+
+        for (lineIndex, line) in lines.enumerated() {
+            guard activeRunID == runID, !Task.isCancelled else { return false }
+
+            if lineIndex > 0 {
+                guard await typeSmartEditorCharacter(
+                    "\n",
+                    source: source,
+                    remoteCompatible: remoteCompatible,
+                    minimumKeyIntervalNanos: max(minimumKeyIntervalNanos, 25_000_000),
+                    runID: runID
+                ) else { return false }
+
+                if line.clearsAutoIndent {
+                    guard activeRunID == runID, !Task.isCancelled else { return false }
+                    guard await Self.sendSingleKey(keyCode: 0x33, command: true) else {
+                        return false
+                    }
+                    guard await waitForSmartEditor(15_000_000, runID: runID) else {
+                        return false
+                    }
+                }
+            }
+
+            for character in line.text {
+                guard await typeSmartEditorCharacter(
+                    character,
+                    source: source,
+                    remoteCompatible: remoteCompatible,
+                    minimumKeyIntervalNanos: minimumKeyIntervalNanos,
+                    runID: runID
+                ) else { return false }
+            }
+
+            let currentProgress = Double(lineIndex + 1) / Double(totalLines)
+            progress = currentProgress
+            progressText = "Typing line \(lineIndex + 1) / \(totalLines) (\(Int(currentProgress * 100))%)"
+        }
+
+        return activeRunID == runID && !Task.isCancelled
+    }
+
+    private func typeSmartEditorCharacter(
+        _ character: Character,
+        source: CGEventSource,
+        remoteCompatible: Bool,
+        minimumKeyIntervalNanos: UInt64,
+        runID: UUID
+    ) async -> Bool {
+        guard activeRunID == runID, !Task.isCancelled else { return false }
+        let keyStartedAt = ProcessInfo.processInfo.systemUptime
+        guard await Self.simulateHardwareCharacter(
+            character,
+            source: source,
+            remoteCompatible: remoteCompatible
+        ) else { return false }
+
+        if SmartEditorPlanner.deletesAutoCloser(after: character) {
+            guard await waitForSmartEditor(50_000_000, runID: runID) else { return false }
+            guard activeRunID == runID, !Task.isCancelled else { return false }
+            guard await Self.sendSingleKey(keyCode: 0x75) else { return false }
+            guard await waitForSmartEditor(20_000_000, runID: runID) else { return false }
+        }
+
+        let elapsedNanos = UInt64(max(0, (ProcessInfo.processInfo.systemUptime - keyStartedAt) * 1_000_000_000))
+        if minimumKeyIntervalNanos > elapsedNanos {
+            guard await waitForSmartEditor(minimumKeyIntervalNanos - elapsedNanos, runID: runID) else {
+                return false
+            }
+        }
+        return activeRunID == runID && !Task.isCancelled
+    }
+
+    private func waitForSmartEditor(_ nanoseconds: UInt64, runID: UUID) async -> Bool {
+        guard activeRunID == runID, !Task.isCancelled else { return false }
+        do {
+            try await Task.sleep(nanoseconds: nanoseconds)
+        } catch {
+            return false
+        }
+        return activeRunID == runID && !Task.isCancelled
     }
 
     func cancelInjection() {
@@ -326,19 +426,6 @@ final class KeystrokeEngine: ObservableObject {
         await pause(keyHoldNanos)
         keyUp.post(tap: .cghidEventTap)
         return true
-    }
-
-    private static func moveRightOverAutoPair(
-        source: CGEventSource,
-        remoteCompatible: Bool
-    ) async -> Bool {
-        let keyCode: CGKeyCode = 0x7C
-        let keyHoldNanos: UInt64 = remoteCompatible ? 16_000_000 : 4_000_000
-        guard postKeyEvent(source: source, keyCode: keyCode, isDown: true, flags: []) else {
-            return false
-        }
-        await pause(keyHoldNanos)
-        return postKeyEvent(source: source, keyCode: keyCode, isDown: false, flags: [])
     }
 
     // MARK: - Virtual Keyboard Key Sender
