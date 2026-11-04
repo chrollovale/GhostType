@@ -11,23 +11,3 @@ enum AppTheme {
     static let blueSoft = Color(red: 0.84, green: 0.87, blue: 1.0)
     static let key = Color(red: 0.99, green: 0.985, blue: 0.975)
 }
-
-struct DotMatrixMark: View {
-    var dotSize: CGFloat = 4
-    var spacing: CGFloat = 3
-
-    var body: some View {
-        VStack(spacing: spacing) {
-            ForEach(0..<3, id: \.self) { row in
-                HStack(spacing: spacing) {
-                    ForEach(0..<3, id: \.self) { column in
-                        Circle()
-                            .fill((row == 1 && column == 1) ? AppTheme.blue : AppTheme.ink)
-                            .frame(width: dotSize, height: dotSize)
-                    }
-                }
-            }
-        }
-        .accessibilityHidden(true)
-    }
-}

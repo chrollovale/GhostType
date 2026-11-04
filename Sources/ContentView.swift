@@ -6,11 +6,11 @@ struct LogoView: View {
     var size: CGFloat = 36
 
     var body: some View {
-        RoundedRectangle(cornerRadius: size * 0.24, style: .continuous)
-            .fill(AppTheme.inset)
-            .overlay(RoundedRectangle(cornerRadius: size * 0.24, style: .continuous).stroke(AppTheme.line, lineWidth: 1))
-            .overlay(DotMatrixMark(dotSize: size * 0.11, spacing: size * 0.08))
-        .frame(width: size, height: size)
+        Image("GhostTypeMark", bundle: .module)
+            .resizable()
+            .interpolation(.high)
+            .frame(width: size, height: size)
+            .accessibilityHidden(true)
     }
 }
 

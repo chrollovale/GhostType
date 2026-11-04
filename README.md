@@ -36,11 +36,11 @@ Terminal modes type commands into the focused terminal. Review the target path a
 
 ## Quick Install
 
-1. Download **[GhostType-v1.1.0-macos-arm64.zip](https://github.com/chrollovale/KeyInjector/releases/latest)**.
+1. Download **[GhostType-v1.1.1-macos-arm64.zip](https://github.com/chrollovale/KeyInjector/releases/latest)**.
 2. Unzip and drag `GhostType.app` into `/Applications`.
 3. Launch `GhostType` and grant Accessibility permissions when prompted.
 
-The previous [KeyInjector v1.0.0 release](https://github.com/chrollovale/KeyInjector/releases/tag/v1.0.0) remains available.
+The previous [GhostType v1.1.0](https://github.com/chrollovale/KeyInjector/releases/tag/v1.1.0) and original [KeyInjector v1.0.0](https://github.com/chrollovale/KeyInjector/releases/tag/v1.0.0) releases remain available.
 
 ---
 

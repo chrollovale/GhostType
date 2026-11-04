@@ -4,15 +4,14 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-APP_VERSION="1.1.0"
+APP_VERSION="1.1.1"
 OUTPUT_DIR="${1:-$SCRIPT_DIR}"
 if [[ "$OUTPUT_DIR" != /* ]]; then
     OUTPUT_DIR="$SCRIPT_DIR/$OUTPUT_DIR"
 fi
 mkdir -p "$OUTPUT_DIR"
 
-echo "==> Generating GhostType icon..."
-swift generate_icon.swift icon_1024.png
+echo "==> Packaging GhostType icon..."
 rm -rf AppIcon.iconset
 mkdir -p AppIcon.iconset
 sips -z 16 16     icon_1024.png --out AppIcon.iconset/icon_16x16.png >/dev/null
@@ -32,6 +31,7 @@ echo "==> Building GhostType v$APP_VERSION in release mode..."
 swift build -c release --product GhostType
 BIN_PATH="$(swift build -c release --show-bin-path)/GhostType"
 APP_BUNDLE="$OUTPUT_DIR/GhostType.app"
+RESOURCE_BUNDLE="$(swift build -c release --show-bin-path)/KeyInjector_KeyInjector.bundle"
 
 echo "==> Creating $APP_BUNDLE..."
 rm -rf "$APP_BUNDLE"
@@ -39,6 +39,7 @@ mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
 cp "$BIN_PATH" "$APP_BUNDLE/Contents/MacOS/GhostType"
 chmod +x "$APP_BUNDLE/Contents/MacOS/GhostType"
 cp AppIcon.icns "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
+cp -R "$RESOURCE_BUNDLE" "$APP_BUNDLE/Contents/Resources/"
 
 cat <<EOF > "$APP_BUNDLE/Contents/Info.plist"
 <?xml version="1.0" encoding="UTF-8"?>

@@ -12,7 +12,8 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "KeyInjector",
-            path: "Sources"
+            path: "Sources",
+            resources: [.copy("GhostTypeMark.png")]
         )
     ]
 )
