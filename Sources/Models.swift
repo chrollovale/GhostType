@@ -85,10 +85,10 @@ enum InjectionPayloadBuilder {
 
     private static func uniqueDelimiter(for input: String) -> String {
         let lines = input.components(separatedBy: "\n")
-        var delimiter = "KEYINJECTOR_EOF"
+        var delimiter = "GHOSTTYPE_EOF"
         var suffix = 1
         while lines.contains(delimiter) {
-            delimiter = "KEYINJECTOR_EOF_\(suffix)"
+            delimiter = "GHOSTTYPE_EOF_\(suffix)"
             suffix += 1
         }
         return delimiter

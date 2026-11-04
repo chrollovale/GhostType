@@ -3,18 +3,18 @@
   <h1>GhostType</h1>
   <p><b>Native macOS Text Injection</b></p>
 
-  [![Release](https://img.shields.io/github/v/release/chrollovale/KeyInjector?style=flat-square&color=38bdf8)](https://github.com/chrollovale/KeyInjector/releases/latest)
-  [![Platform](https://img.shields.io/badge/platform-macOS%2013%2B-000000?style=flat-square&logo=apple&logoColor=white)](https://github.com/chrollovale/KeyInjector)
+  [![Release](https://img.shields.io/github/v/release/chrollovale/GhostType?style=flat-square&color=38bdf8)](https://github.com/chrollovale/GhostType/releases/latest)
+  [![Platform](https://img.shields.io/badge/platform-macOS%2013%2B-000000?style=flat-square&logo=apple&logoColor=white)](https://github.com/chrollovale/GhostType)
   [![Swift](https://img.shields.io/badge/Swift-6.0-FA7343?style=flat-square&logo=swift&logoColor=white)](https://swift.org)
   [![License: MIT](https://img.shields.io/badge/License-MIT-green?style=flat-square)](./LICENSE)
 
   <br />
-  <a href="https://github.com/chrollovale/KeyInjector/releases/latest"><b>📥 Download GhostType for macOS (.zip)</b></a>
+  <a href="https://github.com/chrollovale/GhostType/releases/latest"><b>📥 Download GhostType for macOS (.zip)</b></a>
 </div>
 
 ---
 
-**GhostType** is a native macOS application for sending text and commands to other apps. Hardware key injection works without the clipboard; an optional exact-paste mode is available for code editors that transform Enter and punctuation keystrokes. The GitHub repository remains named **KeyInjector** so its original `v1.0.0` release and download stay available.
+**GhostType** is a native macOS application for sending text and commands to other apps. Hardware key injection works without the clipboard; an optional exact-paste mode is available for code editors that transform Enter and punctuation keystrokes. The GitHub repository was renamed from **KeyInjector** to **GhostType**; its earlier releases remain available.
 
 ---
 
@@ -36,19 +36,19 @@ Terminal modes type commands into the focused terminal. Review the target path a
 
 ## Quick Install
 
-1. Download **[GhostType-v1.1.1-macos-arm64.zip](https://github.com/chrollovale/KeyInjector/releases/latest)**.
+1. Download **[GhostType-v1.1.1-macos-arm64.zip](https://github.com/chrollovale/GhostType/releases/latest)**.
 2. Unzip and drag `GhostType.app` into `/Applications`.
 3. Launch `GhostType` and grant Accessibility permissions when prompted.
 
-The previous [GhostType v1.1.0](https://github.com/chrollovale/KeyInjector/releases/tag/v1.1.0) and original [KeyInjector v1.0.0](https://github.com/chrollovale/KeyInjector/releases/tag/v1.0.0) releases remain available.
+The previous [GhostType v1.1.0](https://github.com/chrollovale/GhostType/releases/tag/v1.1.0) and original [KeyInjector v1.0.0](https://github.com/chrollovale/GhostType/releases/tag/v1.0.0) releases remain available.
 
 ---
 
 ## Build from Source
 
 ```bash
-git clone https://github.com/chrollovale/KeyInjector.git
-cd KeyInjector
+git clone https://github.com/chrollovale/GhostType.git
+cd GhostType
 swift build
 swift run GhostType
 ./bundle.sh

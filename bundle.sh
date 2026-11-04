@@ -31,7 +31,7 @@ echo "==> Building GhostType v$APP_VERSION in release mode..."
 swift build -c release --product GhostType
 BIN_PATH="$(swift build -c release --show-bin-path)/GhostType"
 APP_BUNDLE="$OUTPUT_DIR/GhostType.app"
-RESOURCE_BUNDLE="$(swift build -c release --show-bin-path)/KeyInjector_KeyInjector.bundle"
+RESOURCE_BUNDLE="$(swift build -c release --show-bin-path)/GhostType_GhostType.bundle"
 
 echo "==> Creating $APP_BUNDLE..."
 rm -rf "$APP_BUNDLE"

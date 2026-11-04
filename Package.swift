@@ -2,16 +2,16 @@
 import PackageDescription
 
 let package = Package(
-    name: "KeyInjector",
+    name: "GhostType",
     platforms: [
         .macOS(.v13)
     ],
     products: [
-        .executable(name: "GhostType", targets: ["KeyInjector"])
+        .executable(name: "GhostType", targets: ["GhostType"])
     ],
     targets: [
         .executableTarget(
-            name: "KeyInjector",
+            name: "GhostType",
             path: "Sources",
             resources: [.copy("GhostTypeMark.png")]
         )
