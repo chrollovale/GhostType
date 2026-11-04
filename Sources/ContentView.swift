@@ -5,12 +5,44 @@ import AppKit
 struct LogoView: View {
     var size: CGFloat = 36
 
+    private static let markImage: NSImage? = {
+        guard let url = Bundle.module.url(forResource: "GhostTypeMark", withExtension: "png") else {
+            return nil
+        }
+        return NSImage(contentsOf: url)
+    }()
+
+    @ViewBuilder
     var body: some View {
-        Image("GhostTypeMark", bundle: .module)
-            .resizable()
-            .interpolation(.high)
-            .frame(width: size, height: size)
-            .accessibilityHidden(true)
+        if let markImage = Self.markImage {
+            Image(nsImage: markImage)
+                .resizable()
+                .interpolation(.high)
+                .frame(width: size, height: size)
+                .accessibilityHidden(true)
+        } else {
+            RoundedRectangle(cornerRadius: size * 0.24, style: .continuous)
+                .fill(AppTheme.inset)
+                .overlay(
+                    RoundedRectangle(cornerRadius: size * 0.24, style: .continuous)
+                        .stroke(AppTheme.line, lineWidth: 1)
+                )
+                .overlay {
+                    VStack(spacing: size * 0.08) {
+                        ForEach(0..<3, id: \.self) { row in
+                            HStack(spacing: size * 0.08) {
+                                ForEach(0..<3, id: \.self) { column in
+                                    Circle()
+                                        .fill(row == 1 && column == 1 ? AppTheme.blue : AppTheme.ink)
+                                        .frame(width: size * 0.11, height: size * 0.11)
+                                }
+                            }
+                        }
+                    }
+                }
+                .frame(width: size, height: size)
+                .accessibilityHidden(true)
+        }
     }
 }
 

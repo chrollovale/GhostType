@@ -104,21 +104,32 @@ final class KeystrokeEngine: ObservableObject {
             }
             self.progressText = "Injecting keystrokes…"
 
-            let characters = Array(normalizedText)
-            let total = characters.count
+            let actions = mode == .smartEditor
+                ? SmartEditorPlanner.actions(for: normalizedText)
+                : normalizedText.map(SmartEditorAction.type)
+            let total = actions.count
             guard total > 0 else {
                 self.finish(runID: runID, message: "Nothing to inject.")
                 return
             }
 
-            for (index, character) in characters.enumerated() {
+            for (index, action) in actions.enumerated() {
                 guard self.activeRunID == runID, !Task.isCancelled else { return }
                 let keyStartedAt = ProcessInfo.processInfo.systemUptime
-                let sent = await Self.simulateHardwareCharacter(
-                    character,
-                    source: source,
-                    remoteCompatible: remoteCompatible
-                )
+                let sent: Bool
+                switch action {
+                case let .type(character):
+                    sent = await Self.simulateHardwareCharacter(
+                        character,
+                        source: source,
+                        remoteCompatible: remoteCompatible
+                    )
+                case .stepOverPair:
+                    sent = await Self.moveRightOverAutoPair(
+                        source: source,
+                        remoteCompatible: remoteCompatible
+                    )
+                }
                 guard self.activeRunID == runID, !Task.isCancelled else { return }
                 guard sent else {
                     self.finish(runID: runID, message: "Keystroke creation failed. Check Accessibility access and try again.")
@@ -315,6 +326,19 @@ final class KeystrokeEngine: ObservableObject {
         await pause(keyHoldNanos)
         keyUp.post(tap: .cghidEventTap)
         return true
+    }
+
+    private static func moveRightOverAutoPair(
+        source: CGEventSource,
+        remoteCompatible: Bool
+    ) async -> Bool {
+        let keyCode: CGKeyCode = 0x7C
+        let keyHoldNanos: UInt64 = remoteCompatible ? 16_000_000 : 4_000_000
+        guard postKeyEvent(source: source, keyCode: keyCode, isDown: true, flags: []) else {
+            return false
+        }
+        await pause(keyHoldNanos)
+        return postKeyEvent(source: source, keyCode: keyCode, isDown: false, flags: [])
     }
 
     // MARK: - Virtual Keyboard Key Sender

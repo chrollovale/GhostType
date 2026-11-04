@@ -14,18 +14,19 @@
 
 ---
 
-**GhostType** is a native macOS application for sending text and commands to other apps. Hardware key injection works without the clipboard; an optional exact-paste mode is available for code editors that transform Enter and punctuation keystrokes. The GitHub repository was renamed from **KeyInjector** to **GhostType**; its earlier releases remain available.
+**GhostType** is a native macOS application for sending text and commands to other apps. Hardware key injection works without the clipboard; Exact Paste and Smart Editor modes support code editors that transform keystrokes. The GitHub repository was renamed from **KeyInjector** to **GhostType**; its earlier releases remain available.
 
 ---
 
 ## Features
 
 - **Countdown-Based Injection:** Click "Inject", then use the countdown to switch focus to your target window.
-- **Four Injection Modes:**
+- **Five Injection Modes:**
   1. **Base64 One-Liner:** Encodes source as UTF-8 and writes it with `printf` and Base64 decoding. The destination path is shell-quoted.
   2. **Terminal Heredoc:** Writes through a quoted here-document with a delimiter selected to avoid collisions with source lines.
   3. **Direct Typing:** Sends clipboard-free keyboard events. Hardware key mapping assumes a US ANSI layout. Code editors may transform Enter, Tab, or punctuation through their editor behaviors.
-  4. **Exact Paste:** Places the text on the macOS clipboard briefly, pastes it once, and restores the previous clipboard if it hasn't changed.
+  4. **Smart Editor (Anti-Bracket):** For editors that auto-insert `)`, `]`, and `}`, moves over those generated closers instead of typing them a second time. Bracket pairing must be enabled; indentation remains editor-controlled.
+  5. **Exact Paste:** Places the text on the macOS clipboard briefly, pastes it once, and restores the previous clipboard if it hasn't changed.
 - **Key Interval Control:** Set the minimum time between key starts from 8ms to 100ms. Event hold time is included; a VM / remote option uses longer holds.
 - **Live Payload Preview:** See the payload before starting.
 - **Emergency Cancel:** Stop typing from the app at any time.
@@ -36,11 +37,11 @@ Terminal modes type commands into the focused terminal. Review the target path a
 
 ## Quick Install
 
-1. Download **[GhostType-v1.1.1-macos-arm64.zip](https://github.com/chrollovale/GhostType/releases/latest)**.
+1. Download **[GhostType-v1.2.0-macos-arm64.zip](https://github.com/chrollovale/GhostType/releases/latest)**.
 2. Unzip and drag `GhostType.app` into `/Applications`.
 3. Launch `GhostType` and grant Accessibility permissions when prompted.
 
-The previous [GhostType v1.1.0](https://github.com/chrollovale/GhostType/releases/tag/v1.1.0) and original [KeyInjector v1.0.0](https://github.com/chrollovale/GhostType/releases/tag/v1.0.0) releases remain available.
+The previous [GhostType v1.1.1](https://github.com/chrollovale/GhostType/releases/tag/v1.1.1), [GhostType v1.1.0](https://github.com/chrollovale/GhostType/releases/tag/v1.1.0), and original [KeyInjector v1.0.0](https://github.com/chrollovale/GhostType/releases/tag/v1.0.0) releases remain available.
 
 ---
 
